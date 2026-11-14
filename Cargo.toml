@@ -11,3 +11,27 @@ log = "0.4.35"
 pollster = "1.0.1"
 wgpu = "30.0.1"
 winit = "0.30.13"
+
+[lints.clippy]
+# Enable pedantic as a baseline, then silence the noisy graphics/math rules below
+pedantic = { level = "warn", priority = -1 }
+
+# --- 1. Graphics & Math Casts (essential to mute in wgpu/math code) ---
+cast_lossless = "allow"             # allows `width as f32` instead of `f32::from(width)`
+cast_possible_truncation = "allow"  # allows `usize as u32` for buffer/vertex counts
+cast_precision_loss = "allow"       # allows `u64 as f64` for timers/metrics
+cast_sign_loss = "allow"            # allows `i32 as u32` for viewport/scissor coords
+cast_possible_wrap = "allow"        # allows `u32 as i32` when interfacing with windowing APIs
+float_cmp = "allow"                 # allows direct float comparisons where intentional
+
+# --- 2. Binary / Application Ergonomics (great for internal renderers) ---
+missing_errors_doc = "allow"        # no need to write `# Errors` doc blocks on every `Result` fn
+missing_panics_doc = "allow"        # no need to write `# Panics` doc blocks everywhere
+module_name_repetitions = "allow"   # allows `display::Display` or `render::RenderPipeline`
+struct_excessive_bools = "allow"    # common in render config / feature-flag structs
+too_many_lines = "allow"            # wgpu descriptor setup functions are naturally long
+
+# --- 3. High-Value Extra Lints (not in default or pedantic) ---
+dbg_macro = "warn"                  # reminds you to remove leftover `dbg!()` calls
+todo = "warn"                       # highlights unfinished `todo!()` blocks
+undocumented_unsafe_blocks = "warn" # enforces a `// SAFETY:` comment if you ever use `unsafe` (e.g., bytemuck/raw handles)
