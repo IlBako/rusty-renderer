@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use glam::Vec3;
 use wgpu::{Instance, Texture, TextureView};
 use winit::window::Window;
 
-use crate::{display, fps::FpsCounter, gpu, tracer, utils::get_texture};
+use crate::{camera, display, fps::FpsCounter, gpu, tracer, utils::get_texture};
 
 pub struct State {
     pub window: Arc<Window>,
@@ -12,6 +13,7 @@ pub struct State {
     tracer: tracer::Tracer,
     output_texture: Texture,
     output_view: TextureView,
+    camera: camera::Camera,
     fps: FpsCounter,
 }
 
@@ -25,6 +27,8 @@ impl State {
 
         let display = display::Display::new(&gpu.device, gpu.surface_format(), &output_view);
 
+        let camera = camera::Camera::new(Vec3::new(0.0, 0.0, -3.0), 5.0, 60.0_f32.to_radians());
+
         let tracer = tracer::Tracer::new(&gpu.device, &output_view);
 
         Ok(Self {
@@ -34,6 +38,7 @@ impl State {
             tracer,
             output_texture,
             output_view,
+            camera,
             fps: FpsCounter::new(),
         })
     }
@@ -65,6 +70,9 @@ impl State {
             return Ok(());
         };
 
+        self.tracer
+            .upload(&self.gpu.queue, self.camera.to_uniform());
+
         let surface_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -90,5 +98,21 @@ impl State {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn pan(&mut self, dx: f64, dy: f64) {
+        self.camera.pan(dx, dy);
+    }
+
+    pub(crate) fn orbit(&mut self, dx: f64, dy: f64) {
+        self.camera.orbit(dx, dy);
+    }
+
+    pub(crate) fn dolly(&mut self, amount: f32) {
+        self.camera.dolly(amount);
+    }
+
+    pub(crate) fn reset_orientation(&mut self) {
+        self.camera.reset_orientation();
     }
 }

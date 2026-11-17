@@ -2,6 +2,7 @@ use wgpu::Instance;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 mod app;
+mod camera;
 mod display;
 mod fps;
 mod gpu;

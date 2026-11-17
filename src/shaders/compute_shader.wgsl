@@ -1,5 +1,10 @@
-@group(0) @binding(0)
-var output_texture: texture_storage_2d<rgba8unorm, write>;
+struct Camera {
+    position: vec3<f32>,
+    fov: f32,
+    right: vec4<f32>,
+    up: vec4<f32>,
+    forward: vec4<f32>,
+}
 
 struct Ray {
     origin: vec3<f32>,
@@ -21,9 +26,11 @@ struct Hit {
     color: vec3<f32>,
 }
 
-// Camera (moves to a uniform buffer in Phase 4)
-const FOV: f32 = radians(60.0);
-const CAMERA_POS = vec3f(0.0, 0.0, 2.0);
+@group(0) @binding(0)
+var output_texture: texture_storage_2d<rgba8unorm, write>;
+
+@group(0) @binding(1)
+var<uniform> camera: Camera;
 
 // Ray limits
 const T_MIN: f32 = 0.001;
@@ -74,10 +81,13 @@ fn camera_ray(pixel: vec2<u32>, bounds: vec2<u32>) -> Ray {
 
     // Point on the image plane at distance 1: [-1, 1] with y up,
     // scaled by the field of view and the aspect ratio
-    var screen_pos = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) * tan(FOV / 2.0);
+    var screen_pos = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) * tan(camera.fov / 2.0);
     screen_pos.x *= aspect_ratio;
 
-    return Ray(CAMERA_POS, normalize(vec3f(screen_pos, -1.0)));
+    // x·right + y·up + forward
+    let camera_ray = screen_pos.x * camera.right + screen_pos.y * camera.up + camera.forward;
+
+    return Ray(camera.position, normalize(camera_ray.xyz));
 }
 
 // Nearest sphere hit along the ray. Returns a Hit with t = NO_HIT if nothing is hit.
