@@ -4,6 +4,7 @@ use glam::{Quat, Vec3};
 pub struct Camera {
     target: Vec3,
     distance: f32,
+    initial_distance: f32,
     fov: f32,
     orientation: Quat,
 }
@@ -28,6 +29,7 @@ impl Camera {
         Self {
             target: init_target,
             distance: init_distance,
+            initial_distance: init_distance,
             fov,
             orientation,
         }
@@ -81,8 +83,9 @@ impl Camera {
         self.distance = self.distance.clamp(0.1, 1000.0);
     }
 
-    pub fn reset_orientation(&mut self) {
+    pub fn reset_camera(&mut self) {
         self.orientation = Quat::IDENTITY;
+        self.distance = self.initial_distance;
     }
 
     pub fn compute_axis(&self) -> (Vec3, Vec3, Vec3) {

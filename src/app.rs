@@ -97,7 +97,7 @@ impl ApplicationHandler for App {
 
                     if !repeat {
                         match key_code {
-                            KeyCode::Space => state.reset_orientation(),
+                            KeyCode::Space => state.reset_camera(),
                             _ => {}
                         }
                     }

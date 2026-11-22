@@ -112,7 +112,7 @@ impl State {
         self.camera.dolly(amount);
     }
 
-    pub(crate) fn reset_orientation(&mut self) {
-        self.camera.reset_orientation();
+    pub(crate) fn reset_camera(&mut self) {
+        self.camera.reset_camera();
     }
 }
