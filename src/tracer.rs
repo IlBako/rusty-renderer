@@ -1,6 +1,5 @@
 use wgpu::{
-    BindGroup, Buffer, CommandEncoder, ComputePipeline, Device, PipelineCompilationOptions, Queue,
-    Texture, TextureView,
+    BindGroup, BindGroupLayout, Buffer, CommandEncoder, ComputePipeline, Device, PipelineCompilationOptions, Queue, Texture, TextureView,
 };
 
 use crate::camera::CameraUniform;
@@ -12,6 +11,7 @@ pub(crate) struct Tracer {
     compute_pipeline: ComputePipeline,
     compute_bind_group: BindGroup,
     camera_buffer: Buffer,
+    frame_bind_group_layout: BindGroupLayout,
 }
 
 impl Tracer {
@@ -19,9 +19,46 @@ impl Tracer {
         let compute_shader =
             device.create_shader_module(wgpu::include_wgsl!("shaders/compute_shader.wgsl"));
 
+        let frame_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Compute Bind Group 0 Layout"),
+                entries: &[
+                    // @group(0) @binding(0)
+                    // var output_texture: texture_storage_2d<rgba8unorm, write>;
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        count: None,
+                        ty: wgpu::BindingType::StorageTexture {
+                            access: wgpu::StorageTextureAccess::WriteOnly,
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                    },
+                    // @group(0) @binding(1)
+                    // var<uniform> camera: Camera;
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        count: None,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                ],
+            });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Compute Pipeline Layout"),
+            immediate_size: 0,
+            bind_group_layouts: &[Some(&frame_bind_group_layout)],
+        });
+
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Compute Pipeline"),
-            layout: None,
+            layout: Some(&pipeline_layout),
             module: &compute_shader,
             entry_point: Some("main"),
             compilation_options: PipelineCompilationOptions::default(),
@@ -36,12 +73,13 @@ impl Tracer {
         });
 
         let compute_bind_group =
-            Self::build_bind_group(&compute_pipeline, device, view, &camera_buffer);
+            Self::build_bind_group(device, view, &camera_buffer, &frame_bind_group_layout);
 
         Self {
             compute_pipeline,
             compute_bind_group,
             camera_buffer,
+            frame_bind_group_layout
         }
     }
 
@@ -69,14 +107,14 @@ impl Tracer {
     }
 
     fn build_bind_group(
-        compute_pipeline: &ComputePipeline,
         device: &Device,
         view: &TextureView,
         camera_buffer: &Buffer,
+        bind_group_layout: &BindGroupLayout
     ) -> BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Compute Bind Group"),
-            layout: &compute_pipeline.get_bind_group_layout(0),
+            layout: bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -92,6 +130,6 @@ impl Tracer {
 
     pub(crate) fn rebuild_bind_group(&mut self, device: &Device, view: &TextureView) {
         self.compute_bind_group =
-            Self::build_bind_group(&self.compute_pipeline, device, view, &self.camera_buffer);
+            Self::build_bind_group(device, view, &self.camera_buffer, &self.frame_bind_group_layout);
     }
 }
