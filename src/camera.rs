@@ -19,6 +19,8 @@ pub struct CameraUniform {
     forward: [f32; 4],
 }
 
+const _: () = assert!(size_of::<CameraUniform>() == 64);
+
 const ORBIT_SENSITIVITY: f32 = 0.005;
 const PAN_SPEED: f32 = 0.001;
 

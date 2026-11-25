@@ -14,7 +14,6 @@ struct Ray {
 struct Sphere {
     center: vec3<f32>,
     radius: f32,
-    // Linear albedo, not sRGB (see the colour comments in SPHERES)
     color: vec3<f32>,
 }
 
@@ -32,6 +31,9 @@ var output_texture: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(1)
 var<uniform> camera: Camera;
 
+@group(1) @binding(0)
+var<storage, read> scene: array<Sphere>;
+
 // Ray limits
 const T_MIN: f32 = 0.001;
 const T_MAX: f32 = 1e30;
@@ -44,15 +46,6 @@ const SKY_COLOR = vec3f(0.0844, 0.6376, 0.8228); // sRGB (82, 209, 234)
 const LIGHT_DIR = normalize(vec3f(0.0, 3.0, 3.0)); // from the surface towards the light
 const LIGHT_COLOR = vec3f(1.0, 0.95, 0.9);
 const AMBIENT: f32 = 0.05;
-
-// Scene. The array type uses SPHERE_COUNT, so the two cannot get out of sync.
-const SPHERE_COUNT = 4u;
-const SPHERES = array(
-    Sphere(vec3f(0.0, 0.0, -3.0), 1.0, vec3f(1.0, 1.0, 1.0)), // sRGB (255, 255, 255)
-    Sphere(vec3f(0.0, -101.0, -3.0), 100.0, vec3f(0.3763, 0.0232, 0.0232)), // sRGB (165, 42, 42)
-    Sphere(vec3f(-2.2, 0.0, -3.5), 1.0, vec3f(0.2159, 0.0, 1.0)), // sRGB (128, 0, 255)
-    Sphere(vec3f(2.2, 0.0, -3.5), 1.0, vec3f(0.6376, 0.4910, 0.0395)), // sRGB (209, 186, 56)
-);
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -96,12 +89,12 @@ fn closest_hit(ray: Ray) -> Hit {
     var closest_sphere: Sphere;
     var hit_anything = false;
 
-    for (var i = 0u; i < SPHERE_COUNT; i++) {
+    for (var i = 0u; i < arrayLength(&scene); i++) {
         // Passing closest_t as the upper limit only accepts hits nearer than the best so far
-        let t = hit_sphere(SPHERES[i], ray, T_MIN, closest_t);
+        let t = hit_sphere(scene[i], ray, T_MIN, closest_t);
         if t != NO_HIT {
             closest_t = t;
-            closest_sphere = SPHERES[i];
+            closest_sphere = scene[i];
             hit_anything = true;
         }
     }
@@ -119,8 +112,8 @@ fn closest_hit(ray: Ray) -> Hit {
 // Stops at the first hit: a shadow ray only needs to know whether something is in the way.
 fn in_shadow(point: vec3<f32>, dir: vec3<f32>) -> bool {
     let ray = Ray(point, dir);
-    for (var i = 0u; i < SPHERE_COUNT; i++) {
-        if hit_sphere(SPHERES[i], ray, T_MIN, T_MAX) != NO_HIT {
+    for (var i = 0u; i < arrayLength(&scene); i++) {
+        if hit_sphere(scene[i], ray, T_MIN, T_MAX) != NO_HIT {
             return true;
         }
     }

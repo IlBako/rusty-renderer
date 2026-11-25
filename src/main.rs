@@ -6,6 +6,7 @@ mod camera;
 mod display;
 mod fps;
 mod gpu;
+mod scene;
 mod state;
 mod tracer;
 mod utils;

@@ -4,7 +4,7 @@ use glam::Vec3;
 use wgpu::{Instance, Texture, TextureView};
 use winit::window::Window;
 
-use crate::{camera, display, fps::FpsCounter, gpu, tracer, utils::get_texture};
+use crate::{camera, display, fps::FpsCounter, gpu, scene, tracer, utils::get_texture};
 
 pub struct State {
     pub window: Arc<Window>,
@@ -14,6 +14,7 @@ pub struct State {
     output_texture: Texture,
     output_view: TextureView,
     camera: camera::Camera,
+    scene: scene::Scene,
     fps: FpsCounter,
 }
 
@@ -29,7 +30,10 @@ impl State {
 
         let camera = camera::Camera::new(Vec3::new(0.0, 0.0, -3.0), 5.0, 60.0_f32.to_radians());
 
-        let tracer = tracer::Tracer::new(&gpu.device, &output_view);
+        let scene = scene::Scene::demo();
+
+        let mut tracer = tracer::Tracer::new(&gpu.device, &output_view);
+        tracer.upload_scene(&gpu.device, &gpu.queue, &scene);
 
         Ok(Self {
             window,
@@ -39,6 +43,7 @@ impl State {
             output_texture,
             output_view,
             camera,
+            scene,
             fps: FpsCounter::new(),
         })
     }
@@ -54,7 +59,7 @@ impl State {
         self.display
             .rebuild_bind_group(&self.gpu.device, &self.output_view);
         self.tracer
-            .rebuild_bind_group(&self.gpu.device, &self.output_view);
+            .rebuild_frame_bind_group(&self.gpu.device, &self.output_view);
 
         self.window.request_redraw();
     }
@@ -71,7 +76,7 @@ impl State {
         };
 
         self.tracer
-            .upload(&self.gpu.queue, self.camera.to_uniform());
+            .upload_camera(&self.gpu.queue, self.camera.to_uniform());
 
         let surface_view = output
             .texture
