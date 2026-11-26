@@ -5,6 +5,7 @@ use wgpu::{
 
 use crate::{
     camera::CameraUniform,
+    material::GpuMaterial,
     scene::{GpuSphere, Scene},
 };
 
@@ -14,12 +15,61 @@ const WORKGROUP_SIZE: u32 = 8;
 // Initial room in the sphere buffer, in spheres. The buffer grows when a scene needs more.
 const INITIAL_SPHERE_CAPACITY: u64 = 16;
 
+// Initial room in the material buffer, in materials. The buffer grows when a scene needs more.
+const INITIAL_MATERIAL_CAPACITY: u64 = 4;
+
+pub(crate) struct StorageBuffer {
+    buffer: Buffer,
+    label: &'static str,
+}
+
+impl StorageBuffer {
+    pub(crate) fn new(device: &Device, initial_capacity: u64, label: &'static str) -> Self {
+        // Ensure non-zero, 4-byte aligned initial capacity so doubling (`size * 2`) always grows.
+        let size = initial_capacity.max(4);
+        Self {
+            buffer: Self::create_buffer(device, size, label),
+            label,
+        }
+    }
+
+    /// Grows the buffer if `bytes` does not fit, writes the data, and returns
+    /// `true` if a new buffer was allocated (requiring a bind group rebuild).
+    pub(crate) fn write(&mut self, device: &Device, queue: &Queue, bytes: &[u8]) -> bool {
+        let needed = bytes.len() as u64;
+        let mut reallocated = false;
+
+        if self.buffer.size() < needed {
+            let size = needed.max(self.buffer.size() * 2);
+            self.buffer = Self::create_buffer(device, size, self.label);
+            reallocated = true;
+        }
+
+        queue.write_buffer(&self.buffer, 0, bytes);
+        reallocated
+    }
+
+    pub(crate) fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
+
+    fn create_buffer(device: &Device, size: u64, label: &'static str) -> Buffer {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+}
+
 pub(crate) struct Tracer {
     compute_pipeline: ComputePipeline,
     frame_bind_group: BindGroup,
     scene_bind_group: BindGroup,
     camera_buffer: Buffer,
-    sphere_buffer: Buffer,
+    sphere_buffer: StorageBuffer,
+    material_buffer: StorageBuffer,
     frame_bind_group_layout: BindGroupLayout,
     scene_bind_group_layout: BindGroupLayout,
 }
@@ -76,6 +126,18 @@ impl Tracer {
                             min_binding_size: None,
                         },
                     },
+                    // @group(1) @binding(1)
+                    // var<storage, read> materials: array<Material>;
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        count: None,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
                 ],
             });
 
@@ -107,14 +169,24 @@ impl Tracer {
         let frame_bind_group =
             Self::build_frame_bind_group(device, view, &camera_buffer, &frame_bind_group_layout);
 
-        // Created empty; the scene is written with `upload_scene`
-        let sphere_buffer = Self::create_sphere_buffer(
+        let sphere_buffer = StorageBuffer::new(
             device,
             INITIAL_SPHERE_CAPACITY * size_of::<GpuSphere>() as u64,
+            "Sphere Buffer",
         );
 
-        let scene_bind_group =
-            Self::build_scene_bind_group(device, &sphere_buffer, &scene_bind_group_layout);
+        let material_buffer = StorageBuffer::new(
+            device,
+            INITIAL_MATERIAL_CAPACITY * size_of::<GpuMaterial>() as u64,
+            "Material Buffer",
+        );
+
+        let scene_bind_group = Self::build_scene_bind_group(
+            device,
+            &sphere_buffer,
+            &material_buffer,
+            &scene_bind_group_layout,
+        );
 
         Self {
             compute_pipeline,
@@ -122,6 +194,7 @@ impl Tracer {
             scene_bind_group,
             camera_buffer,
             sphere_buffer,
+            material_buffer,
             frame_bind_group_layout,
             scene_bind_group_layout,
         }
@@ -153,28 +226,18 @@ impl Tracer {
 
     pub(crate) fn upload_scene(&mut self, device: &Device, queue: &Queue, scene: &Scene) {
         let spheres = scene.get_gpu_spheres();
-        let bytes: &[u8] = bytemuck::cast_slice(&spheres);
-        let needed = bytes.len() as u64;
+        let materials = scene.get_gpu_materials();
 
-        // Grow with spare room, so adding spheres does not recreate the buffer every time.
-        // A new buffer needs a new bind group: the old one would keep the old buffer alive.
-        if self.sphere_buffer.size() < needed {
-            let size = needed.max(self.sphere_buffer.size() * 2);
-            self.sphere_buffer = Self::create_sphere_buffer(device, size);
+        let rebuild_group = self
+            .sphere_buffer
+            .write(device, queue, bytemuck::cast_slice(&spheres))
+            | self
+                .material_buffer
+                .write(device, queue, bytemuck::cast_slice(&materials));
+
+        if rebuild_group {
             self.rebuild_scene_bind_group(device);
         }
-
-        queue.write_buffer(&self.sphere_buffer, 0, bytes);
-    }
-
-    // Never created with size 0: a runtime-sized array binding must hold at least one element.
-    fn create_sphere_buffer(device: &Device, size: u64) -> Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Sphere Buffer"),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-            size,
-        })
     }
 
     fn build_frame_bind_group(
@@ -201,16 +264,23 @@ impl Tracer {
 
     fn build_scene_bind_group(
         device: &Device,
-        sphere_buffer: &Buffer,
+        sphere_buffer: &StorageBuffer,
+        material_buffer: &StorageBuffer,
         bind_group_layout: &BindGroupLayout,
     ) -> BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Compute Scene Bind Group"),
             layout: bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: sphere_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: sphere_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: material_buffer.buffer().as_entire_binding(),
+                },
+            ],
         })
     }
 
@@ -227,6 +297,7 @@ impl Tracer {
         self.scene_bind_group = Self::build_scene_bind_group(
             device,
             &self.sphere_buffer,
+            &self.material_buffer,
             &self.scene_bind_group_layout,
         );
     }

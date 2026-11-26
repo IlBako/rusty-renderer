@@ -1,10 +1,12 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
+use crate::material::{GpuMaterial, Material};
+
 pub struct Sphere {
     center: Vec3,
     radius: f32,
-    color: Vec3,
+    material_id: MaterialId,
 }
 
 #[repr(C)]
@@ -12,45 +14,74 @@ pub struct Sphere {
 pub struct GpuSphere {
     center: [f32; 3],
     radius: f32,
-    color: [f32; 3],
-    _padding: f32,
+    material_idx: u32,
+    _padding: [f32; 3],
 }
 
 const _: () = assert!(size_of::<GpuSphere>() == 32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MaterialId(u32);
+
+impl MaterialId {
+    pub(crate) fn index(self) -> u32 {
+        self.0
+    }
+}
+
 pub struct Scene {
+    materials: Vec<Material>,
     spheres: Vec<Sphere>,
 }
 
 impl Scene {
-    pub fn demo() -> Self {
-        let mut spheres = Vec::new();
-        spheres.push(Sphere {
-            center: Vec3::new(0.0, 0.0, -3.0),
-            radius: 1.0,
-            color: srgb_to_linear(Vec3::new(255.0, 255.0, 255.0)),
-        });
-        spheres.push(Sphere {
-            center: Vec3::new(0.0, -101.0, -3.0),
-            radius: 100.0,
-            color: srgb_to_linear(Vec3::new(165.0, 42.0, 42.0)),
-        });
-        spheres.push(Sphere {
-            center: Vec3::new(-2.2, 0.0, -3.5),
-            radius: 1.0,
-            color: srgb_to_linear(Vec3::new(128.0, 0.0, 255.0)),
-        });
-        spheres.push(Sphere {
-            center: Vec3::new(2.2, 0.0, -3.5),
-            radius: 1.0,
-            color: srgb_to_linear(Vec3::new(209.0, 186.0, 56.0)),
-        });
+    fn new() -> Self {
+        Self {
+            materials: Vec::new(),
+            spheres: Vec::new(),
+        }
+    }
 
-        Self { spheres }
+    pub fn demo() -> Self {
+        let mut scene = Scene::new();
+
+        let white = scene.add_material(Material::new(srgb_to_linear(Vec3::new(
+            255.0, 255.0, 255.0,
+        ))));
+        let ground =
+            scene.add_material(Material::new(srgb_to_linear(Vec3::new(165.0, 42.0, 42.0))));
+        let purple =
+            scene.add_material(Material::new(srgb_to_linear(Vec3::new(128.0, 0.0, 255.0))));
+        // let ocra = scene.add_material(Material::new(srgb_to_linear(Vec3::new(209.0, 186.0, 56.0))));
+
+        scene.add_sphere(Vec3::new(0.0, 0.0, -3.0), 1.0, white);
+        scene.add_sphere(Vec3::new(0.0, -101.0, -3.0), 100.0, ground);
+        scene.add_sphere(Vec3::new(-2.2, 0.0, -3.5), 1.0, purple);
+        scene.add_sphere(Vec3::new(2.2, 0.0, -3.5), 1.0, purple);
+
+        scene
     }
 
     pub fn get_gpu_spheres(&self) -> Vec<GpuSphere> {
         self.spheres.iter().map(Sphere::to_gpu).collect()
+    }
+
+    pub fn get_gpu_materials(&self) -> Vec<GpuMaterial> {
+        self.materials.iter().map(Material::to_gpu).collect()
+    }
+
+    pub fn add_material(&mut self, material: Material) -> MaterialId {
+        let id = u32::try_from(self.materials.len()).expect("Material array length overflows u32");
+        self.materials.push(material);
+        MaterialId(id)
+    }
+
+    pub fn add_sphere(&mut self, center: Vec3, radius: f32, material_id: MaterialId) {
+        self.spheres.push(Sphere {
+            center,
+            radius,
+            material_id,
+        });
     }
 }
 
@@ -59,8 +90,8 @@ impl Sphere {
         GpuSphere {
             center: self.center.to_array(),
             radius: self.radius,
-            color: self.color.to_array(),
-            _padding: 0.0,
+            material_idx: self.material_id.index(),
+            _padding: [0.0, 0.0, 0.0],
         }
     }
 }
