@@ -1,17 +1,7 @@
 use wgpu::Instance;
 use winit::event_loop::{ControlFlow, EventLoop};
 
-mod app;
-mod camera;
-mod display;
-mod fps;
-mod gpu;
-mod material;
-mod scene;
-mod state;
-mod tracer;
-mod utils;
-use app::App;
+use rusty_renderer::App;
 
 fn main() {
     env_logger::init();

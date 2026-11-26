@@ -10,7 +10,7 @@ use winit::{
     window::Window,
 };
 
-pub(crate) struct App {
+pub struct App {
     state: Option<State>,
     instance: Instance,
     input: InputState,
