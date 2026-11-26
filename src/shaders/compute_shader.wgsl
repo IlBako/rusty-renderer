@@ -18,7 +18,20 @@ struct Sphere {
 }
 
 struct Material {
-    color: vec3<f32>
+    albedo: vec3<f32>
+}
+
+struct Light {
+    color: vec3<f32>,
+    intensity: f32,
+    direction: vec3<f32>
+}
+
+struct Scene_Settings {
+    sky_color: vec3<f32>,
+    ambient: f32,
+    sphere_count: u32,
+    light_count: u32
 }
 
 struct Hit {
@@ -41,18 +54,17 @@ var<storage, read> spheres: array<Sphere>;
 @group(1) @binding(1)
 var<storage, read> materials: array<Material>;
 
+@group(1) @binding(2)
+var<storage, read> lights: array<Light>;
+
+@group(1) @binding(3)
+var<uniform> scene_settings: Scene_Settings;
+
 // Ray limits
 const T_MIN: f32 = 0.001;
 const T_MAX: f32 = 1e30;
 const NO_HIT: f32 = -1.0;
 const SHADOW_BIAS: f32 = 0.01;
-
-// Lighting. All colours here are linear; the comment gives the sRGB value
-// they were picked as, converted with the exact sRGB curve.
-const SKY_COLOR = vec3f(0.0844, 0.6376, 0.8228); // sRGB (82, 209, 234)
-const LIGHT_DIR = normalize(vec3f(0.0, 3.0, 3.0)); // from the surface towards the light
-const LIGHT_COLOR = vec3f(1.0, 0.95, 0.9);
-const AMBIENT: f32 = 0.05;
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -64,7 +76,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let ray = camera_ray(global_id.xy, bounds);
     let hit = closest_hit(ray);
 
-    var color = SKY_COLOR;
+    var color = scene_settings.sky_color;
     if hit.t != NO_HIT {
         color = shade(hit);
     }
@@ -96,7 +108,7 @@ fn closest_hit(ray: Ray) -> Hit {
     var closest_sphere: Sphere;
     var hit_anything = false;
 
-    for (var i = 0u; i < arrayLength(&spheres); i++) {
+    for (var i = 0u; i < scene_settings.sphere_count; i++) {
         // Passing closest_t as the upper limit only accepts hits nearer than the best so far
         let t = hit_sphere(spheres[i], ray, T_MIN, closest_t);
         if t != NO_HIT {
@@ -119,7 +131,7 @@ fn closest_hit(ray: Ray) -> Hit {
 // Stops at the first hit: a shadow ray only needs to know whether something is in the way.
 fn in_shadow(point: vec3<f32>, dir: vec3<f32>) -> bool {
     let ray = Ray(point, dir);
-    for (var i = 0u; i < arrayLength(&spheres); i++) {
+    for (var i = 0u; i < scene_settings.sphere_count; i++) {
         if hit_sphere(spheres[i], ray, T_MIN, T_MAX) != NO_HIT {
             return true;
         }
@@ -127,20 +139,25 @@ fn in_shadow(point: vec3<f32>, dir: vec3<f32>) -> bool {
     return false;
 }
 
-// Lambert diffuse with one directional light, plus ambient. Returns linear colour.
 fn shade(hit: Hit) -> vec3<f32> {
 
-    let sphere_color = materials[hit.material_idx].color;
+    let sphere_color = materials[hit.material_idx].albedo;
 
-    let ambient = AMBIENT * sphere_color;
+    var total_light = scene_settings.ambient * sphere_color;
 
-    // Start the shadow ray slightly off the surface so it does not hit its own sphere
-    if in_shadow(hit.position + SHADOW_BIAS * hit.normal, LIGHT_DIR) {
-        return ambient;
+    for (var i = 0u; i < scene_settings.light_count; i++){
+        let current_light = lights[i];
+        
+        let diffuse = max(dot(hit.normal, current_light.direction), 0.0);
+
+        // Start the shadow ray slightly off the surface so it does not hit its own sphere
+        if (diffuse == 0 || in_shadow(hit.position + SHADOW_BIAS * hit.normal, current_light.direction)) {
+            continue;
+        }
+        
+        total_light += sphere_color * current_light.color * diffuse * current_light.intensity;
     }
-
-    let diffuse = max(dot(hit.normal, LIGHT_DIR), 0.0);
-    return sphere_color * LIGHT_COLOR * diffuse + ambient;
+    return total_light;
 }
 
 // Distance along the ray to the first intersection with the sphere in [t_min, t_max),

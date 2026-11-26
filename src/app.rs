@@ -24,6 +24,7 @@ pub struct InputState {
 }
 
 impl App {
+    #[must_use]
     pub fn new(instance: Instance) -> Self {
         Self {
             state: None,
@@ -98,6 +99,8 @@ impl ApplicationHandler for App {
                     if !repeat {
                         match key_code {
                             KeyCode::Space => state.reset_camera(),
+                            KeyCode::Enter => {}
+                            KeyCode::Backspace => {}
                             _ => {}
                         }
                     }
@@ -138,13 +141,13 @@ impl ApplicationHandler for App {
             return;
         };
 
-        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
-            if self.input.middle_mouse_pressed {
-                if self.input.modifiers.shift_key() {
-                    state.pan(dx, dy);
-                } else {
-                    state.orbit(dx, dy);
-                }
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
+            && self.input.middle_mouse_pressed
+        {
+            if self.input.modifiers.shift_key() {
+                state.pan(dx, dy);
+            } else {
+                state.orbit(dx, dy);
             }
         }
     }

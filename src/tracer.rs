@@ -5,8 +5,9 @@ use wgpu::{
 
 use crate::{
     camera::CameraUniform,
+    light::GpuLight,
     material::GpuMaterial,
-    scene::{GpuSphere, Scene},
+    scene::{GpuSceneSettings, GpuSphere, Scene},
 };
 
 // Size set in the wgsl shader file
@@ -17,6 +18,9 @@ const INITIAL_SPHERE_CAPACITY: u64 = 16;
 
 // Initial room in the material buffer, in materials. The buffer grows when a scene needs more.
 const INITIAL_MATERIAL_CAPACITY: u64 = 4;
+
+// Initial room in the light buffer, in lights. The buffer grows when a scene needs more.
+const INITIAL_LIGHT_CAPACITY: u64 = 4;
 
 pub(crate) struct StorageBuffer {
     buffer: Buffer,
@@ -70,6 +74,8 @@ pub(crate) struct Tracer {
     camera_buffer: Buffer,
     sphere_buffer: StorageBuffer,
     material_buffer: StorageBuffer,
+    light_buffer: StorageBuffer,
+    settings_buffer: Buffer,
     frame_bind_group_layout: BindGroupLayout,
     scene_bind_group_layout: BindGroupLayout,
 }
@@ -138,6 +144,30 @@ impl Tracer {
                             min_binding_size: None,
                         },
                     },
+                    // @group(1) @binding(2)
+                    // var<storage, read> lights: array<Light>;
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        count: None,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
+                    // @group(1) @binding(3)
+                    // var<uniform> sceneSettings: GpuSceneSettings;
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        count: None,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    },
                 ],
             });
 
@@ -181,10 +211,25 @@ impl Tracer {
             "Material Buffer",
         );
 
+        let light_buffer = StorageBuffer::new(
+            device,
+            INITIAL_LIGHT_CAPACITY * size_of::<GpuLight>() as u64,
+            "Light Buffer",
+        );
+
+        let settings_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Scene Settings Buffer"),
+            mapped_at_creation: false,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            size: size_of::<GpuSceneSettings>() as u64,
+        });
+
         let scene_bind_group = Self::build_scene_bind_group(
             device,
             &sphere_buffer,
             &material_buffer,
+            &light_buffer,
+            &settings_buffer,
             &scene_bind_group_layout,
         );
 
@@ -195,6 +240,8 @@ impl Tracer {
             camera_buffer,
             sphere_buffer,
             material_buffer,
+            light_buffer,
+            settings_buffer,
             frame_bind_group_layout,
             scene_bind_group_layout,
         }
@@ -227,13 +274,21 @@ impl Tracer {
     pub(crate) fn upload_scene(&mut self, device: &Device, queue: &Queue, scene: &Scene) {
         let spheres = scene.get_gpu_spheres();
         let materials = scene.get_gpu_materials();
+        let lights = scene.get_gpu_lights();
+        let scene_settings = scene.get_gpu_scene_settings();
 
         let rebuild_group = self
             .sphere_buffer
             .write(device, queue, bytemuck::cast_slice(&spheres))
             | self
                 .material_buffer
-                .write(device, queue, bytemuck::cast_slice(&materials));
+                .write(device, queue, bytemuck::cast_slice(&materials))
+            | self
+                .light_buffer
+                .write(device, queue, bytemuck::cast_slice(&lights));
+
+        let scene_settings_bytes: &[u8] = bytemuck::bytes_of(&scene_settings);
+        queue.write_buffer(&self.settings_buffer, 0, scene_settings_bytes);
 
         if rebuild_group {
             self.rebuild_scene_bind_group(device);
@@ -266,6 +321,8 @@ impl Tracer {
         device: &Device,
         sphere_buffer: &StorageBuffer,
         material_buffer: &StorageBuffer,
+        light_buffer: &StorageBuffer,
+        settings_buffer: &Buffer,
         bind_group_layout: &BindGroupLayout,
     ) -> BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -279,6 +336,14 @@ impl Tracer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: material_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: light_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: settings_buffer.as_entire_binding(),
                 },
             ],
         })
@@ -298,6 +363,8 @@ impl Tracer {
             device,
             &self.sphere_buffer,
             &self.material_buffer,
+            &self.light_buffer,
+            &self.settings_buffer,
             &self.scene_bind_group_layout,
         );
     }

@@ -3,6 +3,7 @@ mod camera;
 mod display;
 mod fps;
 mod gpu;
+mod light;
 mod material;
 mod scene;
 mod state;

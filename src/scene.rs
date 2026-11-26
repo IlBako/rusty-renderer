@@ -1,7 +1,10 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
-use crate::material::{GpuMaterial, Material};
+use crate::{
+    light::{GpuLight, Light},
+    material::{GpuMaterial, Material},
+};
 
 pub struct Sphere {
     center: Vec3,
@@ -29,9 +32,43 @@ impl MaterialId {
     }
 }
 
+pub struct Environment {
+    sky_color: Vec3,
+    ambient: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct GpuSceneSettings {
+    sky_color: [f32; 3],
+    ambient: f32,
+    sphere_count: u32,
+    light_count: u32,
+    _padding: [f32; 2],
+}
+
+const _: () = assert!(size_of::<GpuSceneSettings>() == 32);
+
+impl Environment {
+    pub(crate) fn new(sky_color: Vec3, ambient: f32) -> Self {
+        Self { sky_color, ambient }
+    }
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self {
+            sky_color: srgb_to_linear(Vec3::new(82.0, 209.0, 234.0)),
+            ambient: 0.05,
+        }
+    }
+}
+
 pub struct Scene {
     materials: Vec<Material>,
     spheres: Vec<Sphere>,
+    lights: Vec<Light>,
+    environment: Environment,
 }
 
 impl Scene {
@@ -39,6 +76,8 @@ impl Scene {
         Self {
             materials: Vec::new(),
             spheres: Vec::new(),
+            lights: Vec::new(),
+            environment: Environment::default(),
         }
     }
 
@@ -52,12 +91,25 @@ impl Scene {
             scene.add_material(Material::new(srgb_to_linear(Vec3::new(165.0, 42.0, 42.0))));
         let purple =
             scene.add_material(Material::new(srgb_to_linear(Vec3::new(128.0, 0.0, 255.0))));
-        // let ocra = scene.add_material(Material::new(srgb_to_linear(Vec3::new(209.0, 186.0, 56.0))));
 
         scene.add_sphere(Vec3::new(0.0, 0.0, -3.0), 1.0, white);
         scene.add_sphere(Vec3::new(0.0, -101.0, -3.0), 100.0, ground);
         scene.add_sphere(Vec3::new(-2.2, 0.0, -3.5), 1.0, purple);
         scene.add_sphere(Vec3::new(2.2, 0.0, -3.5), 1.0, purple);
+
+        scene.add_light(Light::new(
+            Vec3::new(1.0, 0.95, 0.9),
+            0.5,
+            Vec3::new(0.0, 3.0, 3.0),
+        ));
+
+        scene.add_light(Light::new(
+            Vec3::new(1.0, 0.95, 0.9),
+            0.5,
+            Vec3::new(-3.0, 2.0, 0.0),
+        ));
+
+        scene.environment = Environment::new(srgb_to_linear(Vec3::new(82.0, 209.0, 234.0)), 0.05);
 
         scene
     }
@@ -68,6 +120,28 @@ impl Scene {
 
     pub fn get_gpu_materials(&self) -> Vec<GpuMaterial> {
         self.materials.iter().map(Material::to_gpu).collect()
+    }
+
+    pub fn get_gpu_lights(&self) -> Vec<GpuLight> {
+        self.lights.iter().map(Light::to_gpu).collect()
+    }
+
+    pub fn get_gpu_scene_settings(&self) -> GpuSceneSettings {
+        GpuSceneSettings {
+            sky_color: self.environment.sky_color.to_array(),
+            ambient: self.environment.ambient,
+            sphere_count: self.get_sphere_count(),
+            light_count: self.get_light_count(),
+            _padding: [0.0, 0.0],
+        }
+    }
+
+    pub fn get_sphere_count(&self) -> u32 {
+        u32::try_from(self.spheres.len()).expect("Spheres count overflows u32::MAX")
+    }
+
+    pub fn get_light_count(&self) -> u32 {
+        u32::try_from(self.lights.len()).expect("Lights count overflows u32::MAX")
     }
 
     pub fn add_material(&mut self, material: Material) -> MaterialId {
@@ -82,6 +156,10 @@ impl Scene {
             radius,
             material_id,
         });
+    }
+
+    pub fn add_light(&mut self, light: Light) {
+        self.lights.push(light);
     }
 }
 

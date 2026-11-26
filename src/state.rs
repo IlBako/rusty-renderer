@@ -14,7 +14,7 @@ pub struct State {
     output_texture: Texture,
     output_view: TextureView,
     camera: camera::Camera,
-    scene: scene::Scene,
+    _scene: scene::Scene,
     fps: FpsCounter,
 }
 
@@ -43,7 +43,7 @@ impl State {
             output_texture,
             output_view,
             camera,
-            scene,
+            _scene: scene,
             fps: FpsCounter::new(),
         })
     }
