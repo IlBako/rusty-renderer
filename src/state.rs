@@ -4,7 +4,7 @@ use glam::Vec3;
 use wgpu::{Instance, Texture, TextureView};
 use winit::window::Window;
 
-use crate::{camera, display, fps::FpsCounter, gpu, scene, tracer, utils::get_texture};
+use crate::{camera, display, fps::FpsCounter, gpu, rng, scene, tracer, utils::get_texture};
 
 pub struct State {
     pub window: Arc<Window>,
@@ -14,8 +14,9 @@ pub struct State {
     output_texture: Texture,
     output_view: TextureView,
     camera: camera::Camera,
-    _scene: scene::Scene,
+    scene: scene::Scene,
     fps: FpsCounter,
+    rng: rng::Rng,
 }
 
 impl State {
@@ -43,8 +44,9 @@ impl State {
             output_texture,
             output_view,
             camera,
-            _scene: scene,
+            scene,
             fps: FpsCounter::new(),
+            rng: rng::Rng::from_clock(),
         })
     }
 
@@ -119,5 +121,17 @@ impl State {
 
     pub(crate) fn reset_camera(&mut self) {
         self.camera.reset_camera();
+    }
+
+    pub(crate) fn add_random_sphere(&mut self) {
+        self.scene.add_random_sphere(&mut self.rng);
+        self.tracer
+            .upload_scene(&self.gpu.device, &self.gpu.queue, &self.scene);
+    }
+
+    pub(crate) fn remove_last_sphere(&mut self) {
+        self.scene.remove_last_sphere();
+        self.tracer
+            .upload_scene(&self.gpu.device, &self.gpu.queue, &self.scene);
     }
 }

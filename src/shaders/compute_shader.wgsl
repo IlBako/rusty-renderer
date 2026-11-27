@@ -27,7 +27,7 @@ struct Light {
     direction: vec3<f32>
 }
 
-struct Scene_Settings {
+struct SceneSettings {
     sky_color: vec3<f32>,
     ambient: f32,
     sphere_count: u32,
@@ -58,7 +58,7 @@ var<storage, read> materials: array<Material>;
 var<storage, read> lights: array<Light>;
 
 @group(1) @binding(3)
-var<uniform> scene_settings: Scene_Settings;
+var<uniform> scene_settings: SceneSettings;
 
 // Ray limits
 const T_MIN: f32 = 0.001;

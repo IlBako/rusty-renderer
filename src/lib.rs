@@ -5,6 +5,7 @@ mod fps;
 mod gpu;
 mod light;
 mod material;
+mod rng;
 mod scene;
 mod state;
 mod tracer;

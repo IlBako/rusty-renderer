@@ -4,6 +4,7 @@ use glam::Vec3;
 use crate::{
     light::{GpuLight, Light},
     material::{GpuMaterial, Material},
+    rng,
 };
 
 pub struct Sphere {
@@ -140,6 +141,10 @@ impl Scene {
         u32::try_from(self.spheres.len()).expect("Spheres count overflows u32::MAX")
     }
 
+    pub fn get_material_count(&self) -> u32 {
+        u32::try_from(self.materials.len()).expect("Materials count overflows u32::MAX")
+    }
+
     pub fn get_light_count(&self) -> u32 {
         u32::try_from(self.lights.len()).expect("Lights count overflows u32::MAX")
     }
@@ -160,6 +165,21 @@ impl Scene {
 
     pub fn add_light(&mut self, light: Light) {
         self.lights.push(light);
+    }
+
+    pub fn add_random_sphere(&mut self, rng: &mut rng::Rng) {
+        if self.get_material_count() == 0 {
+            return;
+        }
+
+        let center = rng.next_vec3((Vec3::new(-5.0, 0.0, -5.0), Vec3::new(5.0, 10.0, 5.0)));
+        let radius = rng.next_f32_range(0.5, 2.0);
+        let material_id = rng.next_u32_range(0, self.get_material_count());
+        self.add_sphere(center, radius, MaterialId(material_id));
+    }
+
+    pub fn remove_last_sphere(&mut self) {
+        self.spheres.pop();
     }
 }
 

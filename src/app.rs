@@ -99,8 +99,8 @@ impl ApplicationHandler for App {
                     if !repeat {
                         match key_code {
                             KeyCode::Space => state.reset_camera(),
-                            KeyCode::Enter => {}
-                            KeyCode::Backspace => {}
+                            KeyCode::Enter => state.add_random_sphere(),
+                            KeyCode::Backspace => state.remove_last_sphere(),
                             _ => {}
                         }
                     }
