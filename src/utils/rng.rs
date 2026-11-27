@@ -1,6 +1,8 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use glam::Vec3;
 
-pub trait Vec3Bounds {
+pub(crate) trait Vec3Bounds {
     fn into_vec3_bounds(self) -> (Vec3, Vec3);
 }
 
@@ -16,14 +18,14 @@ impl Vec3Bounds for (Vec3, Vec3) {
     }
 }
 
-pub struct Rng {
+pub(crate) struct Rng {
     state: u32,
 }
 
 impl Rng {
-    pub fn from_clock() -> Self {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+    pub(crate) fn from_clock() -> Self {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .unwrap()
             .subsec_nanos();
         // Mix bits slightly and guarantee non-zero state
@@ -33,7 +35,7 @@ impl Rng {
         }
     }
 
-    pub fn next_u32(&mut self) -> u32 {
+    fn next_u32(&mut self) -> u32 {
         let mut x = self.state;
         x ^= x << 13;
         x ^= x >> 17;
@@ -43,7 +45,7 @@ impl Rng {
     }
 
     /// Returns a u32 uniformly distributed in [min, max)
-    pub fn next_u32_range(&mut self, min: u32, max: u32) -> u32 {
+    pub(crate) fn next_u32_range(&mut self, min: u32, max: u32) -> u32 {
         debug_assert!(min < max, "min must be less than max");
         let range = max - min;
 
@@ -65,19 +67,19 @@ impl Rng {
     }
 
     /// Returns a float in [0.0, 1.0)
-    pub fn next_f32(&mut self) -> f32 {
+    fn next_f32(&mut self) -> f32 {
         // Use the upper 24 bits for exact f32 mantissa precision
         (self.next_u32() >> 8) as f32 / (1u32 << 24) as f32
     }
 
     /// Returns a float in [min, max)
-    pub fn next_f32_range(&mut self, min: f32, max: f32) -> f32 {
+    pub(crate) fn next_f32_range(&mut self, min: f32, max: f32) -> f32 {
         min + self.next_f32() * (max - min)
     }
 
     /// Accepts either `(f32, f32)` for uniform bounds across all axes,
     /// or `(Vec3, Vec3)` for per-axis bounds.
-    pub fn next_vec3<B: Vec3Bounds>(&mut self, bounds: B) -> Vec3 {
+    pub(crate) fn next_vec3<B: Vec3Bounds>(&mut self, bounds: B) -> Vec3 {
         let (min, max) = bounds.into_vec3_bounds();
         Vec3::new(
             self.next_f32_range(min.x, max.x),

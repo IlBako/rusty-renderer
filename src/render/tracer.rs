@@ -1,14 +1,13 @@
 use wgpu::{
-    BindGroup, BindGroupLayout, Buffer, CommandEncoder, ComputePipeline, Device,
-    PipelineCompilationOptions, Queue, Texture, TextureView,
+    BindGroup, BindGroupLayout, Buffer, CommandEncoder, ComputePipeline, Device, Queue, Texture,
+    TextureView,
 };
 
-use crate::{
-    camera::CameraUniform,
-    light::GpuLight,
-    material::GpuMaterial,
-    scene::{GpuSceneSettings, GpuSphere, Scene},
+use super::{
+    gpu_types::{GpuCamera, GpuLight, GpuMaterial, GpuSceneSettings, GpuSphere},
+    storage_buffer::StorageBuffer,
 };
+use crate::scene::{Camera, Scene};
 
 // Size set in the wgsl shader file
 const WORKGROUP_SIZE: u32 = 8;
@@ -21,51 +20,6 @@ const INITIAL_MATERIAL_CAPACITY: u64 = 4;
 
 // Initial room in the light buffer, in lights. The buffer grows when a scene needs more.
 const INITIAL_LIGHT_CAPACITY: u64 = 4;
-
-pub(crate) struct StorageBuffer {
-    buffer: Buffer,
-    label: &'static str,
-}
-
-impl StorageBuffer {
-    pub(crate) fn new(device: &Device, initial_capacity: u64, label: &'static str) -> Self {
-        // Ensure non-zero, 4-byte aligned initial capacity so doubling (`size * 2`) always grows.
-        let size = initial_capacity.max(4);
-        Self {
-            buffer: Self::create_buffer(device, size, label),
-            label,
-        }
-    }
-
-    /// Grows the buffer if `bytes` does not fit, writes the data, and returns
-    /// `true` if a new buffer was allocated (requiring a bind group rebuild).
-    pub(crate) fn write(&mut self, device: &Device, queue: &Queue, bytes: &[u8]) -> bool {
-        let needed = bytes.len() as u64;
-        let mut reallocated = false;
-
-        if self.buffer.size() < needed {
-            let size = needed.max(self.buffer.size() * 2);
-            self.buffer = Self::create_buffer(device, size, self.label);
-            reallocated = true;
-        }
-
-        queue.write_buffer(&self.buffer, 0, bytes);
-        reallocated
-    }
-
-    pub(crate) fn buffer(&self) -> &Buffer {
-        &self.buffer
-    }
-
-    fn create_buffer(device: &Device, size: u64, label: &'static str) -> Buffer {
-        device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(label),
-            size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        })
-    }
-}
 
 pub(crate) struct Tracer {
     compute_pipeline: ComputePipeline,
@@ -185,7 +139,7 @@ impl Tracer {
             layout: Some(&pipeline_layout),
             module: &compute_shader,
             entry_point: Some("main"),
-            compilation_options: PipelineCompilationOptions::default(),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
 
@@ -193,7 +147,7 @@ impl Tracer {
             label: Some("Camera Buffer"),
             mapped_at_creation: false,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            size: size_of::<CameraUniform>() as u64,
+            size: size_of::<GpuCamera>() as u64,
         });
 
         let frame_bind_group =
@@ -266,16 +220,17 @@ impl Tracer {
         );
     }
 
-    pub(crate) fn upload_camera(&self, queue: &Queue, camera: CameraUniform) {
+    pub(crate) fn upload_camera(&self, queue: &Queue, camera: &Camera) {
+        let camera = GpuCamera::from(camera);
         let camera_bytes: &[u8] = bytemuck::bytes_of(&camera);
         queue.write_buffer(&self.camera_buffer, 0, camera_bytes);
     }
 
     pub(crate) fn upload_scene(&mut self, device: &Device, queue: &Queue, scene: &Scene) {
-        let spheres = scene.get_gpu_spheres();
-        let materials = scene.get_gpu_materials();
-        let lights = scene.get_gpu_lights();
-        let scene_settings = scene.get_gpu_scene_settings();
+        let spheres: Vec<GpuSphere> = scene.spheres().iter().map(GpuSphere::from).collect();
+        let materials: Vec<GpuMaterial> = scene.materials().iter().map(GpuMaterial::from).collect();
+        let lights: Vec<GpuLight> = scene.lights().iter().map(GpuLight::from).collect();
+        let scene_settings = GpuSceneSettings::from(scene);
 
         let rebuild_group = self
             .sphere_buffer

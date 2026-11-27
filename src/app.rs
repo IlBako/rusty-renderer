@@ -1,14 +1,17 @@
-use crate::state::State;
 use std::{collections::HashSet, sync::Arc};
 
 use wgpu::Instance;
 use winit::{
     application::ApplicationHandler,
-    event::{DeviceEvent, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{
+        DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
+    },
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, ModifiersState, PhysicalKey},
-    window::Window,
+    window::{Window, WindowId},
 };
+
+use crate::state::State;
 
 pub struct App {
     state: Option<State>,
@@ -17,7 +20,7 @@ pub struct App {
 }
 
 #[derive(Default)]
-pub struct InputState {
+struct InputState {
     middle_mouse_pressed: bool,
     pressed_keys: HashSet<KeyCode>,
     modifiers: ModifiersState,
@@ -57,7 +60,7 @@ impl ApplicationHandler for App {
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        window_id: winit::window::WindowId,
+        window_id: WindowId,
         event: WindowEvent,
     ) {
         let Some(state) = self.state.as_mut() else {
@@ -134,8 +137,8 @@ impl ApplicationHandler for App {
     fn device_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
-        _device_id: winit::event::DeviceId,
-        event: winit::event::DeviceEvent,
+        _device_id: DeviceId,
+        event: DeviceEvent,
     ) {
         let Some(state) = self.state.as_mut() else {
             return;

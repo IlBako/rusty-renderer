@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use wgpu::{Device, Instance, Queue, Surface, SurfaceConfiguration};
+use wgpu::{Device, Instance, Queue, Surface, SurfaceConfiguration, SurfaceTexture, TextureFormat};
 use winit::window::Window;
 
 pub(crate) struct Gpu {
@@ -33,7 +33,7 @@ impl Gpu {
             .copied()
             .unwrap_or(surface_caps.formats[0]);
 
-        let surface_config = wgpu::SurfaceConfiguration {
+        let surface_config = SurfaceConfiguration {
             alpha_mode: surface_caps.alpha_modes[0],
             color_space: wgpu::SurfaceColorSpace::Auto,
             desired_maximum_frame_latency: 2,
@@ -65,7 +65,7 @@ impl Gpu {
         self.configure();
     }
 
-    pub(crate) fn next_frame(&self) -> anyhow::Result<Option<wgpu::SurfaceTexture>> {
+    pub(crate) fn next_frame(&self) -> anyhow::Result<Option<SurfaceTexture>> {
         match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(surface_texture)
             | wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => Ok(Some(surface_texture)),
@@ -88,7 +88,7 @@ impl Gpu {
         }
     }
 
-    pub(crate) fn surface_format(&self) -> wgpu::TextureFormat {
+    pub(crate) fn surface_format(&self) -> TextureFormat {
         self.surface_config.format
     }
 

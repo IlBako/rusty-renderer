@@ -1,71 +1,33 @@
-use bytemuck::{Pod, Zeroable};
+mod camera;
+mod color;
+mod environment;
+mod light;
+mod material;
+mod sphere;
+
+pub(crate) use camera::Camera;
+pub(crate) use light::Light;
+pub(crate) use material::Material;
+pub(crate) use sphere::Sphere;
+
 use glam::Vec3;
 
-use crate::{
-    light::{GpuLight, Light},
-    material::{GpuMaterial, Material},
-    rng,
-};
+use crate::utils::Rng;
+use color::srgb_to_linear;
+use environment::Environment;
 
-pub struct Sphere {
-    center: Vec3,
-    radius: f32,
-    material_id: MaterialId,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct GpuSphere {
-    center: [f32; 3],
-    radius: f32,
-    material_idx: u32,
-    _padding: [f32; 3],
-}
-
-const _: () = assert!(size_of::<GpuSphere>() == 32);
-
+/// Index into the scene's material list. Only `Scene` can create one,
+/// so every `MaterialId` refers to a material that exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MaterialId(u32);
+struct MaterialId(u32);
 
 impl MaterialId {
-    pub(crate) fn index(self) -> u32 {
+    fn index(self) -> u32 {
         self.0
     }
 }
 
-pub struct Environment {
-    sky_color: Vec3,
-    ambient: f32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-pub struct GpuSceneSettings {
-    sky_color: [f32; 3],
-    ambient: f32,
-    sphere_count: u32,
-    light_count: u32,
-    _padding: [f32; 2],
-}
-
-const _: () = assert!(size_of::<GpuSceneSettings>() == 32);
-
-impl Environment {
-    pub(crate) fn new(sky_color: Vec3, ambient: f32) -> Self {
-        Self { sky_color, ambient }
-    }
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Self {
-            sky_color: srgb_to_linear(Vec3::new(82.0, 209.0, 234.0)),
-            ambient: 0.05,
-        }
-    }
-}
-
-pub struct Scene {
+pub(crate) struct Scene {
     materials: Vec<Material>,
     spheres: Vec<Sphere>,
     lights: Vec<Light>,
@@ -82,8 +44,8 @@ impl Scene {
         }
     }
 
-    pub fn demo() -> Self {
-        let mut scene = Scene::new();
+    pub(crate) fn demo() -> Self {
+        let mut scene = Self::new();
 
         let white = scene.add_material(Material::new(srgb_to_linear(Vec3::new(
             255.0, 255.0, 255.0,
@@ -115,94 +77,51 @@ impl Scene {
         scene
     }
 
-    pub fn get_gpu_spheres(&self) -> Vec<GpuSphere> {
-        self.spheres.iter().map(Sphere::to_gpu).collect()
+    pub(crate) fn spheres(&self) -> &[Sphere] {
+        &self.spheres
     }
 
-    pub fn get_gpu_materials(&self) -> Vec<GpuMaterial> {
-        self.materials.iter().map(Material::to_gpu).collect()
+    pub(crate) fn materials(&self) -> &[Material] {
+        &self.materials
     }
 
-    pub fn get_gpu_lights(&self) -> Vec<GpuLight> {
-        self.lights.iter().map(Light::to_gpu).collect()
+    pub(crate) fn lights(&self) -> &[Light] {
+        &self.lights
     }
 
-    pub fn get_gpu_scene_settings(&self) -> GpuSceneSettings {
-        GpuSceneSettings {
-            sky_color: self.environment.sky_color.to_array(),
-            ambient: self.environment.ambient,
-            sphere_count: self.get_sphere_count(),
-            light_count: self.get_light_count(),
-            _padding: [0.0, 0.0],
-        }
+    pub(crate) fn environment(&self) -> &Environment {
+        &self.environment
     }
 
-    pub fn get_sphere_count(&self) -> u32 {
-        u32::try_from(self.spheres.len()).expect("Spheres count overflows u32::MAX")
-    }
-
-    pub fn get_material_count(&self) -> u32 {
-        u32::try_from(self.materials.len()).expect("Materials count overflows u32::MAX")
-    }
-
-    pub fn get_light_count(&self) -> u32 {
-        u32::try_from(self.lights.len()).expect("Lights count overflows u32::MAX")
-    }
-
-    pub fn add_material(&mut self, material: Material) -> MaterialId {
+    fn add_material(&mut self, material: Material) -> MaterialId {
         let id = u32::try_from(self.materials.len()).expect("Material array length overflows u32");
         self.materials.push(material);
         MaterialId(id)
     }
 
-    pub fn add_sphere(&mut self, center: Vec3, radius: f32, material_id: MaterialId) {
-        self.spheres.push(Sphere {
-            center,
-            radius,
-            material_id,
-        });
+    fn add_sphere(&mut self, center: Vec3, radius: f32, material_id: MaterialId) {
+        self.spheres.push(Sphere::new(center, radius, material_id));
     }
 
-    pub fn add_light(&mut self, light: Light) {
+    fn add_light(&mut self, light: Light) {
         self.lights.push(light);
     }
 
-    pub fn add_random_sphere(&mut self, rng: &mut rng::Rng) {
-        if self.get_material_count() == 0 {
+    pub(crate) fn add_random_sphere(&mut self, rng: &mut Rng) {
+        if self.materials.is_empty() {
             return;
         }
 
+        let material_count =
+            u32::try_from(self.materials.len()).expect("Material array length overflows u32");
+
         let center = rng.next_vec3((Vec3::new(-5.0, 0.0, -5.0), Vec3::new(5.0, 10.0, 5.0)));
         let radius = rng.next_f32_range(0.5, 2.0);
-        let material_id = rng.next_u32_range(0, self.get_material_count());
+        let material_id = rng.next_u32_range(0, material_count);
         self.add_sphere(center, radius, MaterialId(material_id));
     }
 
-    pub fn remove_last_sphere(&mut self) {
+    pub(crate) fn remove_last_sphere(&mut self) {
         self.spheres.pop();
     }
-}
-
-impl Sphere {
-    pub(crate) fn to_gpu(&self) -> GpuSphere {
-        GpuSphere {
-            center: self.center.to_array(),
-            radius: self.radius,
-            material_idx: self.material_id.index(),
-            _padding: [0.0, 0.0, 0.0],
-        }
-    }
-}
-
-fn srgb_to_linear(color: Vec3) -> Vec3 {
-    fn channel(c: f32) -> f32 {
-        let s = c / 255.0;
-        if s <= 0.04045 {
-            s / 12.92
-        } else {
-            ((s + 0.055) / 1.055).powf(2.4)
-        }
-    }
-
-    Vec3::new(channel(color.x), channel(color.y), channel(color.z))
 }

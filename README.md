@@ -69,22 +69,26 @@ The wgpu backend is currently set to DX12, so the renderer runs on Windows. wgpu
 
 ## Project structure
 
+The code is split into two halves: `scene/` describes what is rendered and knows nothing about the GPU, while `render/` owns every GPU resource and converts the scene into GPU layouts.
+
 | Module | Responsibility |
 |---|---|
 | `main.rs` | Event loop and GPU instance |
 | `app.rs` | Window events and input handling |
 | `state.rs` | Owns the per-window resources and coordinates each frame |
-| `gpu.rs` | Surface, device, queue and swapchain configuration |
-| `tracer.rs` | Compute pipeline, bind groups, camera and scene buffers |
-| `display.rs` | Render pipeline that presents the traced image |
-| `camera.rs` | Orbit camera and its GPU representation |
-| `scene.rs` | Scene description (spheres, environment) and its GPU representation |
-| `material.rs` | Materials and their GPU representation |
-| `light.rs` | Lights and their GPU representation |
-| `rng.rs` | Small random number generator |
-| `fps.rs` | Frame-rate counter |
-| `utils.rs` | Shared helpers |
-| `shaders/` | WGSL compute and display shaders |
+| `scene.rs` | Scene container, type-safe material IDs and the demo scene |
+| `scene/camera.rs` | Orbit camera (orbit, pan, dolly) |
+| `scene/sphere.rs`, `material.rs`, `light.rs`, `environment.rs` | Scene primitives, materials, lights, sky and ambient |
+| `scene/color.rs` | sRGB to linear colour conversion |
+| `render/gpu.rs` | Surface, device, queue and swapchain configuration |
+| `render/tracer.rs` | Compute pipeline, bind groups, camera and scene uploads |
+| `render/display.rs` | Render pipeline that presents the traced image |
+| `render/gpu_types.rs` | GPU-side struct layouts, size checks and conversions from scene types |
+| `render/storage_buffer.rs` | Storage buffer that grows with the scene |
+| `render/output.rs` | Output texture shared by the compute and display passes |
+| `render/shaders/` | WGSL compute and display shaders |
+| `utils/rng.rs` | Small random number generator |
+| `utils/fps.rs` | Frame-rate counter |
 
 ## Roadmap
 

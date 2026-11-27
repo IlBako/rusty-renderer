@@ -1,4 +1,3 @@
-use wgpu::Instance;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 use rusty_renderer::App;
@@ -13,7 +12,7 @@ fn main() {
         event_loop.owned_display_handle(),
     ));
     inst_desc.backends = wgpu::Backends::DX12;
-    let instance = Instance::new(inst_desc);
+    let instance = wgpu::Instance::new(inst_desc);
 
     let mut app = App::new(instance);
     event_loop.run_app(&mut app).expect("event loop error");

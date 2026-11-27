@@ -1,13 +1,7 @@
 mod app;
-mod camera;
-mod display;
-mod fps;
-mod gpu;
-mod light;
-mod material;
-mod rng;
+mod render;
 mod scene;
 mod state;
-mod tracer;
 mod utils;
+
 pub use app::App;

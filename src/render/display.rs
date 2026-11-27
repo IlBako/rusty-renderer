@@ -1,6 +1,6 @@
 use wgpu::{BindGroup, CommandEncoder, Device, RenderPipeline, TextureFormat, TextureView};
 
-use crate::utils::create_bind_group;
+use super::output::create_texture_bind_group;
 
 pub(crate) struct Display {
     render_pipeline: RenderPipeline,
@@ -94,7 +94,7 @@ impl Display {
         device: &Device,
         view: &TextureView,
     ) -> BindGroup {
-        create_bind_group(
+        create_texture_bind_group(
             device,
             Some("Render Bind Group"),
             &render_pipeline.get_bind_group_layout(0),

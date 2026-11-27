@@ -4,36 +4,41 @@ use glam::Vec3;
 use wgpu::{Instance, Texture, TextureView};
 use winit::window::Window;
 
-use crate::{camera, display, fps::FpsCounter, gpu, rng, scene, tracer, utils::get_texture};
+use crate::{
+    render::{Display, Gpu, Tracer, create_output_texture},
+    scene::{Camera, Scene},
+    utils::{FpsCounter, Rng},
+};
 
-pub struct State {
-    pub window: Arc<Window>,
-    gpu: gpu::Gpu,
-    display: display::Display,
-    tracer: tracer::Tracer,
+pub(crate) struct State {
+    pub(crate) window: Arc<Window>,
+    gpu: Gpu,
+    display: Display,
+    tracer: Tracer,
     output_texture: Texture,
     output_view: TextureView,
-    camera: camera::Camera,
-    scene: scene::Scene,
+    camera: Camera,
+    scene: Scene,
     fps: FpsCounter,
-    rng: rng::Rng,
+    rng: Rng,
 }
 
 impl State {
-    pub fn new(window: Arc<Window>, instance: &Instance) -> anyhow::Result<Self> {
+    pub(crate) fn new(window: Arc<Window>, instance: &Instance) -> anyhow::Result<Self> {
         let size = window.inner_size();
 
-        let gpu = gpu::Gpu::new(window.clone(), instance)?;
+        let gpu = Gpu::new(window.clone(), instance)?;
 
-        let (output_texture, output_view) = get_texture(&gpu.device, (size.width, size.height));
+        let (output_texture, output_view) =
+            create_output_texture(&gpu.device, (size.width, size.height));
 
-        let display = display::Display::new(&gpu.device, gpu.surface_format(), &output_view);
+        let display = Display::new(&gpu.device, gpu.surface_format(), &output_view);
 
-        let camera = camera::Camera::new(Vec3::new(0.0, 0.0, -3.0), 5.0, 60.0_f32.to_radians());
+        let camera = Camera::new(Vec3::new(0.0, 0.0, -3.0), 5.0, 60.0_f32.to_radians());
 
-        let scene = scene::Scene::demo();
+        let scene = Scene::demo();
 
-        let mut tracer = tracer::Tracer::new(&gpu.device, &output_view);
+        let mut tracer = Tracer::new(&gpu.device, &output_view);
         tracer.upload_scene(&gpu.device, &gpu.queue, &scene);
 
         Ok(Self {
@@ -46,17 +51,18 @@ impl State {
             camera,
             scene,
             fps: FpsCounter::new(),
-            rng: rng::Rng::from_clock(),
+            rng: Rng::from_clock(),
         })
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub(crate) fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
         }
         self.gpu.resize(width, height);
 
-        (self.output_texture, self.output_view) = get_texture(&self.gpu.device, (width, height));
+        (self.output_texture, self.output_view) =
+            create_output_texture(&self.gpu.device, (width, height));
 
         self.display
             .rebuild_bind_group(&self.gpu.device, &self.output_view);
@@ -77,8 +83,7 @@ impl State {
             return Ok(());
         };
 
-        self.tracer
-            .upload_camera(&self.gpu.queue, self.camera.to_uniform());
+        self.tracer.upload_camera(&self.gpu.queue, &self.camera);
 
         let surface_view = output
             .texture
